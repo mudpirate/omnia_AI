@@ -221,13 +221,19 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
+  // --- Environment Variable Configuration ---
+  const API_PORT = process.env.REACT_APP_API_PORT || 4000;
+  const API_BASE_URL = `http://localhost:${API_PORT}`;
+  const CHAT_ENDPOINT = `${API_BASE_URL}/chat`;
+  // ------------------------------------------
+
   useEffect(() => {
     if (messages.length === 0) {
       setTimeout(() => {
         setMessages([
           {
             id: 1,
-            text: "Hello! I'm your Omnia AI shopping assistant. Ask me to find you a product!",
+            text: `Hello! I'm your Omnia AI shopping assistant. I'm ready to find products for you! (Backend: ${CHAT_ENDPOINT})`,
             sender: "ai",
           },
         ]);
@@ -275,7 +281,7 @@ export default function App() {
 
     try {
       const response = await handleFetchWithRetry(
-        "http://localhost:4000/chat",
+        CHAT_ENDPOINT, // Using environment-configured endpoint
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -318,7 +324,7 @@ export default function App() {
       console.error("Error fetching chat response:", error);
       const errorMessage = {
         id: Date.now() + 1,
-        text: `Sorry, I could not connect to the backend at http://localhost:4000/chat. Please ensure the server is running. Error: ${error.message}`,
+        text: `Sorry, I could not connect to the backend at ${CHAT_ENDPOINT}. Please ensure the server is running. Error: ${error.message}`,
         sender: "ai",
       };
       setMessages((prev) => [...prev, errorMessage]);
