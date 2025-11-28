@@ -1103,8 +1103,8 @@ const product_search_tool_schema = {
         },
         max_results: {
           type: "integer",
-          description: "80 for MEDIUM intent, 100 for HIGH intent.",
-          default: 100,
+          description: "20 for MEDIUM intent, 30 for HIGH intent.",
+          default: 30,
         },
         category: {
           type: "string",
@@ -1215,7 +1215,7 @@ NEVER include: 'cheapest', 'best', 'under X KWD' (these are handled separately)
 NEVER include: the store name in the 'keywords' array. Pass it in the 'store_name' parameter.
 
 Set category to "${detectedCategory || "mobile_phone"}"
-Set max_results to ${intent === "HIGH" ? "18" : "12"}`;
+Set max_results to ${intent === "HIGH" ? "15" : "10"}`;
 
     const searchMessages = createLlmMessages(message, searchSystemPrompt);
 
@@ -1285,7 +1285,7 @@ Set max_results to ${intent === "HIGH" ? "18" : "12"}`;
     // STEP 6: Filter and Generate Response
     console.log("[Step 6] Generating final response...");
 
-    const productCount = intent === "MEDIUM" ? 50 : 80;
+    const productCount = intent === "MEDIUM" ? 12 : 20;
     const lastToolResponse = responseHistory[responseHistory.length - 1];
 
     let allProducts = [];
