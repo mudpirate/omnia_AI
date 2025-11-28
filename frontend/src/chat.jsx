@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 
 // --- SVG Icons ---
-// Note: Icons remain the same, but their usage will reflect the new color theme
 const UserIcon = (props) => (
   <svg
     {...props}
@@ -33,7 +32,7 @@ const SparkleIcon = (props) => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <path d="M10 12l2 2 2-2M14 6l1 1 1-1M5 18l1 1 1-1M21 3l-1 1 1 1M3 21l1 1 1-1M12 2v2M20 12h2M12 20v2M2 12h2" />
+    <path d="M10 12l2 2 2-2M14 6l1 1 1-1M5 18l1 1 1-1M21 3l-1 1 1-1M3 21l1 1 1-1M12 2v2M20 12h2M12 20v2M2 12h2" />
   </svg>
 );
 
@@ -56,7 +55,7 @@ const LinkIcon = (props) => (
   </svg>
 );
 
-// Loader - Added a simple transition for subtlety
+// Loader
 const Loader = () => (
   <div className="flex items-center space-x-2 p-3 text-cyan-400 transition-opacity duration-300">
     <div className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce delay-100" />
@@ -65,12 +64,12 @@ const Loader = () => (
   </div>
 );
 
-// Product Card - Redesigned for a more "designed" look
+// Product Card - High contrast, black background, white lines.
 const ProductCard = ({ product }) => (
-  <div className="group relative p-5 border border-gray-700 rounded-xl shadow-xl transition-all duration-300 bg-gray-800 hover:bg-gray-700/80 transform hover:-translate-y-0.5">
-    <div className="flex gap-5">
+  <div className="relative p-5 bg-black border border-gray-800 rounded-xl shadow-lg transition-all duration-300 hover:border-white/50">
+    <div className="flex flex-col sm:flex-row gap-4">
       {/* Image with a darker placeholder style */}
-      <div className="shrink-0 w-32 h-32 bg-gray-900 rounded-lg overflow-hidden flex items-center justify-center border border-gray-600 shadow-inner">
+      <div className="shrink-0 w-full sm:w-32 h-32 bg-black rounded-lg overflow-hidden flex items-center justify-center border border-gray-700 shadow-inner">
         <img
           src={product.image_url}
           alt={product.product_name}
@@ -78,7 +77,7 @@ const ProductCard = ({ product }) => (
           onError={(e) => {
             e.target.onerror = null;
             e.target.src =
-              "https://placehold.co/128x128/1F2937/D1D5DB?text=NO_IMG";
+              "https://placehold.co/128x128/000000/D1D5DB?text=NO_IMG";
           }}
         />
       </div>
@@ -88,6 +87,14 @@ const ProductCard = ({ product }) => (
           {product.product_name}
         </h3>
 
+        <p className="text-sm text-gray-400 mt-1 italic">
+          Sold by:{" "}
+          <span className="font-semibold text-gray-200">
+            {product.store_name}
+          </span>
+        </p>
+
+        {/* Price */}
         <p className="text-3xl font-extrabold text-cyan-400 mt-2 font-mono">
           {typeof product.price_kwd === "number"
             ? product.price_kwd.toFixed(2)
@@ -95,20 +102,13 @@ const ProductCard = ({ product }) => (
           KWD
         </p>
 
-        <p className="text-sm text-gray-400 mt-2 italic">
-          Sold by:{" "}
-          <span className="font-semibold text-gray-200">
-            {product.store_name}
-          </span>
-        </p>
-
         {/* Spec Highlights as distinct badges */}
-        <div className="flex flex-wrap gap-2 mt-4">
+        <div className="flex flex-wrap gap-2 mt-4 border-b border-gray-800 pb-3">
           {Array.isArray(product.spec_highlights) &&
             product.spec_highlights.map((spec, idx) => (
               <span
                 key={idx}
-                className="px-3 py-1 text-xs font-medium bg-cyan-900/50 text-cyan-300 border border-cyan-800 rounded-full shadow-md"
+                className="px-3 py-1 text-xs font-medium bg-black text-white border border-gray-700 rounded-full shadow-md"
               >
                 {spec}
               </span>
@@ -117,15 +117,17 @@ const ProductCard = ({ product }) => (
       </div>
     </div>
 
-    {/* Link button with new color scheme */}
+    {/* Link button relocated below specs/details */}
     <a
       href={product.product_url}
       target="_blank"
       rel="noopener noreferrer"
-      className="absolute top-4 right-4 p-2 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white transition focus:outline-none focus:ring-4 focus:ring-cyan-500 focus:ring-opacity-50 shadow-lg"
+      // Black background, white text, white border
+      className="mt-4 w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white border border-white rounded-lg hover:bg-white hover:text-black transition duration-200 shadow-lg"
       title="View Product Page"
     >
-      <LinkIcon className="w-5 h-5" />
+      <LinkIcon className="w-5 h-5 mr-2" />
+      View Product
     </a>
   </div>
 );
@@ -137,7 +139,8 @@ const ProductResponse = ({ data }) => (
       {data.message}
     </p>
 
-    <div className="space-y-3 p-4 bg-gray-900 rounded-lg border border-gray-700 shadow-inner">
+    {/* Product List Container - Ensures a clean black background inside the message area */}
+    <div className="space-y-3 p-4 bg-black rounded-xl border border-gray-700 shadow-inner">
       <h4 className="text-sm font-semibold text-cyan-400 border-b border-gray-700 pb-2">
         ✨ Recommended Products:
       </h4>
@@ -156,39 +159,33 @@ const ProductResponse = ({ data }) => (
   </div>
 );
 
-// Message bubble - Dark theme and subtle alternating backgrounds
+// Message bubble - Dark theme
 const Message = ({ message }) => {
   const isUser = message.sender === "user";
   const hasStructuredData =
     message.sender === "ai" && message.data && message.data.products;
 
   const userIcon = (
-    <div className="w-8 h-8 rounded-full bg-cyan-600 text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-md">
+    <div className="w-8 h-8 rounded-full bg-cyan-600 text-white flex items-center justify-center text-sm font-bold shrink-0 shadow-md border border-white">
       <UserIcon className="w-4 h-4" />
     </div>
   );
 
   const aiIcon = (
-    <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-900 flex items-center justify-center shrink-0 shadow-md">
+    <div className="w-8 h-8 rounded-full bg-black text-cyan-400 flex items-center justify-center shrink-0 shadow-md border border-cyan-400/50">
       <SparkleIcon className="w-5 h-5" />
     </div>
   );
 
   return (
-    <div
-      className={
-        isUser
-          ? "w-full bg-gray-900 border-b border-gray-800 py-6" // Darker user message
-          : "w-full bg-gray-800 border-b border-gray-800 py-6" // Slightly lighter AI message
-      }
-    >
+    <div className="w-full bg-black border-b border-gray-800 py-6">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 flex items-start gap-4">
         <div className="self-start">{isUser ? userIcon : aiIcon}</div>
         <div className="flex-1 min-w-0">
           {hasStructuredData ? (
             <ProductResponse data={message.data} />
           ) : (
-            <p className="text-gray-200 font-normal whitespace-pre-wrap leading-relaxed">
+            <p className="text-gray-100 font-normal whitespace-pre-wrap leading-relaxed">
               {message.text}
             </p>
           )}
@@ -198,7 +195,7 @@ const Message = ({ message }) => {
   );
 };
 
-// Splash Screen - Enhanced with new typography and color
+// Splash Screen
 const Splash = () => (
   <div className="flex flex-col items-center justify-center h-full text-center px-6 text-white">
     <SparkleIcon className="w-16 h-16 text-cyan-400 mb-6 animate-pulse" />
@@ -209,7 +206,7 @@ const Splash = () => (
       Your specialized assistant for purchasing electronics at the **best
       price**.
     </p>
-    <div className="mt-6 p-3 bg-gray-700/50 rounded-lg border border-gray-600 shadow-inner">
+    <div className="mt-6 p-3 bg-black rounded-xl border border-gray-700 shadow-inner">
       <p className="text-md text-gray-400 font-mono italic">
         Example: "Find me the cheapest Samsung Galaxy S23"
       </p>
@@ -226,7 +223,6 @@ export default function App() {
 
   useEffect(() => {
     if (messages.length === 0) {
-      // Staggered reveal for initial message (Motion principle)
       setTimeout(() => {
         setMessages([
           {
@@ -235,7 +231,7 @@ export default function App() {
             sender: "ai",
           },
         ]);
-      }, 500); // 500ms delay for a gentle entrance
+      }, 500);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -344,18 +340,17 @@ export default function App() {
     !isLoading;
 
   return (
-    // Apply new font/color/background to the root
-    <div className="flex flex-col h-screen bg-gray-900 font-sans antialiased text-gray-200">
-      <header className="flex items-center justify-between p-4 bg-gray-950 border-b border-cyan-500/20 text-white shadow-xl sticky top-0 z-10">
-        <h1 className="text-xl sm:text-2xl font-bold font-mono flex items-center gap-2 tracking-wide">
+    <div className="flex flex-col h-screen bg-black font-sans antialiased text-gray-200">
+      <header className="flex items-center justify-between p-4 bg-black border-b border-cyan-500/20 text-white shadow-xl sticky top-0 z-10">
+        <h1 className="text-xl sm:text-2xl font-bold font-mono flex items-center gap-2 tracking-wide text-white">
           <SparkleIcon className="w-6 h-6 text-cyan-400 animate-spin-slow" />
           <span>Omnia AI</span>
         </h1>
       </header>
 
       <main className="flex-1 overflow-y-auto w-full relative">
-        {/* Background with depth/texture */}
-        <div className="absolute inset-0 bg-gray-900 opacity-90 [background-image:radial-gradient(ellipse_at_top,_var(--tw-color-cyan-900)_0%,_#1f2937_100%)]"></div>
+        {/* Background is pure black */}
+        <div className="absolute inset-0 bg-black"></div>
 
         {/* Chat content container */}
         <div className="relative z-0 h-full">
@@ -364,7 +359,6 @@ export default function App() {
           ) : (
             <div className="pb-28">
               {displayMessages.map((msg) => (
-                // Messages are wrapped in a relative container to allow simple animation (if using a motion library)
                 <div
                   key={msg.id}
                   className="opacity-100 transition-opacity duration-500"
@@ -374,9 +368,9 @@ export default function App() {
               ))}
 
               {isLoading && (
-                <div className="w-full bg-gray-800 border-b border-gray-800 py-6">
+                <div className="w-full bg-black border-b border-gray-800 py-6">
                   <div className="max-w-4xl mx-auto px-4 sm:px-6 flex items-start gap-4">
-                    <div className="w-8 h-8 rounded-full bg-gray-200 text-gray-900 flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-black text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-400/50">
                       <SparkleIcon className="w-5 h-5" />
                     </div>
                     <Loader />
@@ -390,18 +384,18 @@ export default function App() {
         </div>
       </main>
 
-      <footer className="w-full bg-gray-950 border-t border-cyan-500/20 p-4 sticky bottom-0 z-10 shadow-2xl">
+      <footer className="w-full bg-black border-t border-gray-700 p-4 sticky bottom-0 z-10 shadow-2xl">
         <div className="max-w-4xl mx-auto">
           <form
             onSubmit={handleSendMessage}
-            className="flex items-center gap-3 bg-gray-900 p-3 rounded-xl border border-gray-700 shadow-lg"
+            className="flex items-center gap-3 bg-black p-3 rounded-xl border border-gray-700 shadow-lg"
           >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="E.g., 'Find me the best wireless headphones under 100 KWD'"
-              className="flex-1 p-2 outline-none text-gray-200 bg-transparent placeholder-gray-500 focus:placeholder-gray-400 transition"
+              className="flex-1 p-2 outline-none text-white bg-transparent placeholder-gray-500 focus:placeholder-gray-400 transition"
               disabled={isLoading}
             />
 
