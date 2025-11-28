@@ -222,8 +222,9 @@ export default function App() {
   const messagesEndRef = useRef(null);
 
   // --- Environment Variable Configuration ---
-  const API_PORT = process.env.REACT_APP_API_PORT || 4000;
-  const API_BASE_URL = `http://localhost:${API_PORT}`;
+  // If REACT_APP_API_URL is set (e.g., to your Render URL), use it.
+  // Otherwise, default to the local dev server running on port 4000.
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
   const CHAT_ENDPOINT = `${API_BASE_URL}/chat`;
   // ------------------------------------------
 
@@ -233,7 +234,7 @@ export default function App() {
         setMessages([
           {
             id: 1,
-            text: `Hello! I'm your Omnia AI shopping assistant. I'm ready to find products for you! (Backend: ${CHAT_ENDPOINT})`,
+            text: `Hello! I'm your Omnia AI shopping assistant. I'm ready to find products for you! (Backend: ${API_BASE_URL})`,
             sender: "ai",
           },
         ]);
