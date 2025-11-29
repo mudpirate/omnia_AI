@@ -7,43 +7,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// 1. Define the Enum for Stock Status
+enum StockStatus {
+  IN_STOCK
+  OUT_OF_STOCK
+}
+
 model Product {
-  id        String @id @default(cuid())
-  storeName String
-  title     String
+  id           String      @id @default(cuid())
+  storeName    String
+  title        String
+  description  String     @default("")
 
- 
-  category String // example: "Laptops", "Mobile Phones", "Headphones"
+  category     String      // example: "Laptops", "Mobile Phones", "Headphones"
 
-  price      Float
-  imageUrl   String   @default("https://example.com/placeholder-image.png")
-  productUrl String   @default("https://example.com/placeholder-product-url")
-  scrapedAt  DateTime @default(now())
-  lastSeenAt DateTime @updatedAt
+  price        Float
+  imageUrl     String      @default("https://example.com/placeholder-image.png")
+  productUrl   String      @default("https://example.com/placeholder-product-url")
+  scrapedAt    DateTime    @default(now())
+  lastSeenAt   DateTime    @updatedAt
+  
+  // 2. Add the new stock field using the Enum
+  stock        StockStatus @default(IN_STOCK) // Default value is set here
 
-  couponId String?
-  coupon   Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull, name: "CouponProducts")
+  couponId     String?
+  coupon       Coupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull, name: "CouponProducts")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@unique([storeName, productUrl], map: "uniq_store_producturl")
   @@index([storeName], map: "idx_product_store")
-  @@index([category], map: "idx_product_category") // NEW INDEX
+  @@index([category], map: "idx_product_category")
   @@index([price], map: "idx_product_price")
   @@index([updatedAt], map: "idx_product_updated_at")
+  // 3. (Optional but Recommended) Add an index for the new stock field
+  @@index([stock], map: "idx_product_stock")
 }
 
 model Coupon {
-  id         String    @id @default(cuid())
-  storeName  String
-  title      String
-  code       String
-  expiryDate DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id           String      @id @default(cuid())
+  storeName    String
+  title        String
+  code         String
+  expiryDate   DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  products Product[] @relation(name: "CouponProducts")
+  products     Product[]   @relation(name: "CouponProducts")
 
   @@unique([storeName, code], map: "uniq_store_code")
   @@index([expiryDate], map: "idx_coupon_expiry")
