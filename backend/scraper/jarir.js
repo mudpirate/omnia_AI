@@ -1,294 +1,297 @@
-import puppeteer from "puppeteer";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, StockStatus } from "@prisma/client";
 
 // --- GLOBAL CONFIGURATION ---
 const prisma = new PrismaClient();
 const DOMAIN = "https://www.jarir.com";
-const PRODUCT_SELECTOR = ".product-tile__item--spacer";
 const STORE_NAME_FIXED = "Jarir";
+
+// Jarir Specific Selectors
+const PRODUCT_TILE_SELECTOR = ".product-tile__item--spacer";
 const PRODUCT_LOAD_URL_FRAGMENT = "/search/GetProductsList";
 
-/**
- * Main function to launch the browser, navigate, scrape, and save to DB.
- *
- * @param {string} TARGET_URL - The starting URL for the category page.
- * @param {string} CATEGORY_NAME - The category slug for the DB.
- */
-async function scrapeProducts(TARGET_URL, CATEGORY_NAME) {
-  let browser;
-  let allProductsData = [];
+// --- CONCURRENCY SETTING ---
+const CONCURRENT_LIMIT = 5;
 
-  // Counters and configuration for the single run
-  const totalSavedCount = 0;
+// -------------------------------------------------------------------
+// --- UNIFIED FUNCTION: SCRAPE STOCK ONLY ---
+// -------------------------------------------------------------------
 
-  // --- INFINITE SCROLL CONFIGURATION ---
-  let consecutiveFailures = 0;
-  let scrollAttempts = 0;
-  const MAX_SCROLLS = 200;
-  const MAX_FAILURES = 5;
-  const NETWORK_TIMEOUT = 15000;
+async function getStockStatus(browser, url) {
+  const page = await browser.newPage();
+  page.setDefaultTimeout(60000);
+
+  let stockStatus = StockStatus.OUT_OF_STOCK; // Safety default
 
   try {
-    console.log(
-      `🚀 Starting MASTER scraper for ${CATEGORY_NAME} at ${TARGET_URL}`
-    );
-
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    // Optimization: Block heavy resources to speed up checking
+    await page.setRequestInterception(true);
+    page.on("request", (req) => {
+      const resourceType = req.resourceType();
+      if (["image", "font", "stylesheet", "media"].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
     });
 
-    const page = await browser.newPage();
-    page.setDefaultTimeout(120000);
-    await page.setViewport({ width: 1280, height: 1080 });
+    await page.goto(url, { waitUntil: "networkidle2" });
 
-    // --- SINGLE RUN SETUP (Using the base URL only) ---
-    const newURL = TARGET_URL.split("?")[0]; // Ensure no existing parameters
-
-    console.log(`\n======================================================`);
-    console.log(`♻️  JOB 1/1 - Default Scraping Run (${newURL})`);
-    console.log(`======================================================`);
-
-    // Navigate to the base URL
+    // 1. WAIT for the Add to Cart section to ensure the button is rendered
     try {
-      await page.goto(newURL, { waitUntil: "networkidle2" });
-      await page.waitForSelector(PRODUCT_SELECTOR, { timeout: 30000 });
-    } catch (error) {
-      console.error(
-        `❌ Navigation/Initial Load Failed. Stopping scraper. Error: ${error.message}`
-      );
-      return; // Exit the function on critical failure
+      // We wait for the container that holds the button
+      await page.waitForSelector(".add-to-cart", { timeout: 10000 });
+    } catch (e) {
+      // If it times out, the page might be weird, but we proceed to check what's there
     }
 
-    let initialCount = await page.$$eval(
-      PRODUCT_SELECTOR,
-      (tiles) => tiles.length
-    );
-    console.log(`Initial product count: ${initialCount}`);
+    // --- IN-BROWSER LOGIC ---
+    const isAvailable = await page.evaluate(() => {
+      // PRIORITY 1: Check for the specific "Add to Cart" test ID (Found in your HTML)
+      const addToCartTestId = document.querySelector(
+        '[data-testid="addToCart"]'
+      );
+      if (addToCartTestId) return true;
 
-    // --- INNER INFINITE SCROLL LOOP (Scroll and Collect) ---
+      // PRIORITY 2: Check for the specific class used for the add button
+      const addToCartClass = document.querySelector(".button--add-to-cart");
+      if (addToCartClass) return true;
+
+      // PRIORITY 3: Check text content of buttons inside the add-to-cart container
+      const container = document.querySelector(".add-to-cart");
+      if (container && container.innerText.includes("Add to Cart")) {
+        return true;
+      }
+
+      // If none of these exist, it's Out of Stock (Notify Me / Not Available)
+      return false;
+    });
+
+    // Set Status based on boolean
+    stockStatus = isAvailable ? StockStatus.IN_STOCK : StockStatus.OUT_OF_STOCK;
+  } catch (e) {
+    console.warn(`\n⚠️ Failed details for ${url}: ${e.message}`);
+    stockStatus = StockStatus.OUT_OF_STOCK;
+  } finally {
+    await page.close();
+  }
+
+  return stockStatus;
+}
+
+// -------------------------------------------------------------------
+
+async function scrapeProducts(browser, TARGET_URL, CATEGORY_NAME) {
+  let allProductsData = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+
+  // We use the SHARED browser passed from master.js
+  const categoryPage = await browser.newPage();
+  categoryPage.setDefaultTimeout(120000);
+  await categoryPage.setViewport({ width: 1280, height: 1080 });
+
+  try {
+    const cleanUrl = TARGET_URL.split("?")[0];
+    console.log(
+      `🚀 Starting JARIR scraper for ${CATEGORY_NAME} at ${cleanUrl}`
+    );
+
+    await categoryPage.goto(cleanUrl, { waitUntil: "networkidle2" });
+
+    try {
+      await categoryPage.waitForSelector(PRODUCT_TILE_SELECTOR, {
+        timeout: 20000,
+      });
+    } catch (e) {
+      console.log("No products found initially.");
+    }
+
+    // --- INFINITE SCROLL LOGIC ---
+    let scrollAttempts = 0;
+    const MAX_SCROLLS = 100;
+    let previousCount = 0;
+    let sameCountRetries = 0;
+
+    console.log("⬇️  Loading all products via scroll...");
+
     while (scrollAttempts < MAX_SCROLLS) {
       scrollAttempts++;
-
-      let previousProductsCount = await page.$$eval(
-        PRODUCT_SELECTOR,
-        (tiles) => tiles.length
+      await categoryPage.evaluate(() =>
+        window.scrollTo(0, document.body.scrollHeight)
       );
 
-      // 1. Setup the network promise: wait for the specific AJAX response
-      const networkPromise = page.waitForResponse(
-        (response) => {
-          return (
-            response.url().includes(PRODUCT_LOAD_URL_FRAGMENT) &&
-            response.status() === 200
-          );
-        },
-        { timeout: NETWORK_TIMEOUT }
-      );
-
-      // 2. Perform the targeted scroll
-      await page.evaluate((selector) => {
-        const tiles = document.querySelectorAll(selector);
-        if (tiles.length > 0) {
-          tiles[tiles.length - 1].scrollIntoView({
-            behavior: "smooth",
-            block: "end",
-          });
-        }
-      }, PRODUCT_SELECTOR);
-
-      // 3. Wait for EITHER the network response OR a fallback timer
       try {
-        await Promise.race([
-          networkPromise,
-          new Promise((resolve) => setTimeout(resolve, 5000)),
-        ]);
+        await categoryPage.waitForResponse(
+          (res) =>
+            res.url().includes(PRODUCT_LOAD_URL_FRAGMENT) &&
+            res.status() === 200,
+          { timeout: 4000 }
+        );
+        await new Promise((r) => setTimeout(r, 1000));
       } catch (e) {
-        // Network wait timed out, proceed to DOM check
+        await new Promise((r) => setTimeout(r, 2000));
       }
 
-      // 4. Wait for DOM rendering to settle
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // 5. Check the new product count
-      const currentProductsCount = await page.$$eval(
-        PRODUCT_SELECTOR,
-        (tiles) => tiles.length
+      const currentCount = await categoryPage.$$eval(
+        PRODUCT_TILE_SELECTOR,
+        (els) => els.length
       );
 
-      if (currentProductsCount > previousProductsCount) {
-        console.log(
-          `... Scroll check: Products loaded now: ${currentProductsCount} (Added ${
-            currentProductsCount - previousProductsCount
-          })`
-        );
-        consecutiveFailures = 0;
+      if (currentCount > previousCount) {
+        process.stdout.write(`\r   Loaded ${currentCount} products...`);
+        previousCount = currentCount;
+        sameCountRetries = 0;
       } else {
-        consecutiveFailures++;
-        console.log(
-          `⚠️ No new products loaded (${currentProductsCount}). Failure ${consecutiveFailures}/${MAX_FAILURES}.`
-        );
-
-        if (consecutiveFailures >= MAX_FAILURES) {
-          console.log(
-            `🛑 Stabilized at ${currentProductsCount} after ${MAX_FAILURES} consecutive checks. Stopping inner loop.`
-          );
-          break;
-        }
+        sameCountRetries++;
+        if (sameCountRetries >= 3) break;
       }
-    } // END INNER SCROLL LOOP
+    }
+    console.log("\n✅ Scroll complete.");
 
-    // --- EXTRACT DATA FOR THIS RUN ---
-    const finalCountForRun = await page.$$eval(
-      PRODUCT_SELECTOR,
-      (tiles) => tiles.length
-    );
-
-    allProductsData = await page.$$eval(
-      PRODUCT_SELECTOR,
+    // --- EXTRACT BASIC DATA ---
+    allProductsData = await categoryPage.$$eval(
+      PRODUCT_TILE_SELECTOR,
       (tiles, domain, store, category) => {
-        const cleanPrice = (txt) => {
-          return parseFloat(txt.replace(/[^0-9.]/g, "").replace(/,/g, "")) || 0;
-        };
-
-        const extractProductData = (tile) => {
-          try {
-            const linkElement = tile.querySelector("a.product-tile__link");
-            const relativeUrl = linkElement?.getAttribute("href");
-            const productUrl = relativeUrl
-              ? relativeUrl.startsWith(domain)
-                ? relativeUrl
-                : `${domain}${relativeUrl}`
-              : "N/A";
-
-            const titleElement = tile.querySelector(".product-title__title");
-            const title = titleElement?.textContent.trim() || "N/A";
-
-            let imageUrl = "https://example.com/placeholder-image.png";
-            const firstSlideImages = tile.querySelectorAll(
-              ".VueCarousel-slide:first-child .lazyload-wrapper img"
-            );
-
-            if (firstSlideImages.length >= 2) {
-              const imageSrc = firstSlideImages[1].getAttribute("src");
-              if (imageSrc && !imageSrc.includes("/assets/placeholder.png")) {
-                imageUrl = imageSrc;
-              }
-            }
-
-            const priceElement = tile.querySelector(
-              ".price-box .price span:last-child"
-            );
-            const priceText = priceElement?.textContent.trim() || "N/A";
-            const price = cleanPrice(priceText);
-
-            return {
-              storeName: store,
-              category: category,
-              title,
-              price,
-              imageUrl,
-              productUrl,
-            };
-          } catch (e) {
-            return null;
-          }
-        };
+        const cleanPrice = (txt) =>
+          parseFloat(txt.replace(/[^0-9.]/g, "").replace(/,/g, "")) || 0;
 
         return tiles
-          .map(extractProductData)
-          .filter((data) => data && data.price > 0 && data.title !== "N/A");
+          .map((tile) => {
+            try {
+              const linkEl = tile.querySelector("a.product-tile__link");
+              const titleEl = tile.querySelector(".product-title__title");
+              const priceEl = tile.querySelector(
+                ".price-box .price span:last-child"
+              );
+              const imgEl =
+                tile.querySelector("img[data-cs-capture]") ||
+                tile.querySelector("img");
+
+              const rawUrl = linkEl ? linkEl.getAttribute("href") : "";
+              const productUrl = rawUrl
+                ? rawUrl.startsWith("http")
+                  ? rawUrl
+                  : `${domain}${rawUrl.startsWith("/") ? "" : "/"}${rawUrl}`
+                : "N/A";
+
+              const title = titleEl ? titleEl.textContent.trim() : "N/A";
+              const price = priceEl ? cleanPrice(priceEl.textContent) : 0;
+
+              let imageUrl = "";
+              if (imgEl) {
+                const srcset = imgEl.getAttribute("srcset");
+                if (srcset)
+                  imageUrl = srcset.split(",")[0].trim().split(" ")[0];
+                else imageUrl = imgEl.getAttribute("src");
+              }
+
+              return {
+                storeName: store,
+                category,
+                title,
+                price,
+                imageUrl,
+                productUrl,
+              };
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter(
+            (p) =>
+              p && p.title !== "N/A" && p.productUrl !== "N/A" && p.price > 0
+          );
       },
       DOMAIN,
       STORE_NAME_FIXED,
       CATEGORY_NAME
     );
-
-    console.log(
-      `✅ Extracted ${finalCountForRun} products for this run. Saving incrementally...`
-    );
-
-    // --- INCREMENTAL SAVE TO DATABASE ---
-    let createdCount = 0;
-    let updatedCount = 0;
-    let skippedCount = 0;
-    let errorCount = 0;
-
-    for (const product of allProductsData) {
-      try {
-        if (!product.title || !product.productUrl || product.price <= 0) {
-          skippedCount++;
-          continue;
-        }
-
-        // UPSERT LOGIC (Find unique combination of storeName and productUrl)
-        const existingProduct = await prisma.product.findUnique({
-          where: {
-            storeName_productUrl: {
-              storeName: product.storeName,
-              productUrl: product.productUrl,
-            },
-          },
-        });
-
-        if (existingProduct) {
-          await prisma.product.update({
-            where: { id: existingProduct.id },
-            data: {
-              title: product.title,
-              category: product.category,
-              price: product.price,
-              imageUrl: product.imageUrl,
-              lastSeenAt: new Date(),
-            },
-          });
-          updatedCount++;
-        } else {
-          await prisma.product.create({
-            data: {
-              storeName: product.storeName,
-              category: product.category,
-              title: product.title,
-              price: product.price,
-              imageUrl: product.imageUrl,
-              productUrl: product.productUrl,
-              scrapedAt: new Date(),
-              lastSeenAt: new Date(),
-            },
-          });
-          createdCount++;
-        }
-      } catch (dbError) {
-        console.error(
-          `Error saving product "${product.title}":`,
-          dbError.message
-        );
-        errorCount++;
-      }
-    }
-
-    const totalSavedCountFinal = createdCount + updatedCount;
-
-    // --- FINAL SUMMARY ---
-    console.log(
-      `\n📦 Run Summary: Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}, Errors: ${errorCount}`
-    );
-    console.log("\n===================================\n");
-    console.log(`✅ MASTER JOB COMPLETE: Processed 1 attempt.`);
-    console.log(
-      `📊 FINAL UNIQUE PRODUCTS SAVED/UPDATED: ${totalSavedCountFinal}`
-    );
-    console.log("===================================\n");
   } catch (error) {
-    console.error(`\n--- CRITICAL ERROR for ${CATEGORY_NAME} ---`);
-    console.error("An unhandled error occurred:", error.message);
-    console.error(error.stack);
+    console.error("Scrape Error:", error);
   } finally {
-    if (browser) {
-      await browser.close();
-      console.log(`\n🔒 Browser closed for ${CATEGORY_NAME}.`);
-    }
+    await categoryPage.close();
   }
+
+  const uniqueProducts = [
+    ...new Map(allProductsData.map((item) => [item.productUrl, item])).values(),
+  ];
+  skippedCount = allProductsData.length - uniqueProducts.length;
+
+  console.log(
+    `\nStarting stock check for ${uniqueProducts.length} products...`
+  );
+
+  // --- CONCURRENT PROCESSING ---
+  const productUpdateTask = async (product) => {
+    // Check Stock ONLY (Description removed)
+    const stock = await getStockStatus(browser, product.productUrl);
+
+    // --- LOGGING ---
+    if (stock === StockStatus.OUT_OF_STOCK) {
+      console.log(`🔴 [OOS] ${product.title.substring(0, 35)}...`);
+    } else {
+      console.log(`🟢 [IN]  ${product.title.substring(0, 35)}...`);
+    }
+    // --------------
+
+    const upsertData = {
+      title: product.title,
+      description: "", // Description check removed as requested
+      category: product.category,
+      price: product.price,
+      imageUrl: product.imageUrl,
+      stock: stock,
+      lastSeenAt: new Date(),
+    };
+
+    const result = await prisma.product.upsert({
+      where: {
+        storeName_productUrl: {
+          storeName: product.storeName,
+          productUrl: product.productUrl,
+        },
+      },
+      update: upsertData,
+      create: {
+        ...upsertData,
+        storeName: product.storeName,
+        productUrl: product.productUrl,
+        scrapedAt: new Date(),
+      },
+    });
+
+    return { result, isNew: result.createdAt > new Date(Date.now() - 5000) };
+  };
+
+  for (let i = 0; i < uniqueProducts.length; i += CONCURRENT_LIMIT) {
+    const batch = uniqueProducts.slice(i, i + CONCURRENT_LIMIT);
+    console.log(
+      `\n➡️  Batch ${Math.ceil((i + 1) / CONCURRENT_LIMIT)}/${Math.ceil(
+        uniqueProducts.length / CONCURRENT_LIMIT
+      )}`
+    );
+
+    const results = await Promise.allSettled(
+      batch.map((p) => productUpdateTask(p))
+    );
+
+    results.forEach((res) => {
+      if (res.status === "fulfilled") {
+        if (res.value.isNew) createdCount++;
+        else updatedCount++;
+      } else {
+        errorCount++;
+        console.error("Product Error:", res.reason);
+      }
+    });
+  }
+
+  console.log(`\n=== SUMMARY: ${CATEGORY_NAME} ===`);
+  console.log(
+    `Saved/Updated: ${createdCount + updatedCount} | Errors: ${errorCount}`
+  );
 }
 
 export default scrapeProducts;

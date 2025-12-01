@@ -102,6 +102,14 @@ const ProductCard = ({ product }) => (
           KWD
         </p>
 
+        {product.product_description && (
+          <div className="mt-3 pt-3 border-t border-gray-800">
+            <p className="text-sm text-gray-300 leading-relaxed font-sans">
+              {product.product_description}
+            </p>
+          </div>
+        )}
+
         {/* Spec Highlights as distinct badges */}
         <div className="flex flex-wrap gap-2 mt-4 border-b border-gray-800 pb-3">
           {Array.isArray(product.spec_highlights) &&

@@ -1,29 +1,37 @@
 // runner.js
 import puppeteer from "puppeteer";
 import { PrismaClient } from "@prisma/client";
-import scrapeProducts from "./xcite.js"; // Adjust path as necessary
+import scrapeProducts from "./jarir.js"; // Adjust path as necessary
 
 const SCRAPING_JOBS = [
   {
-    url: "https://www.xcite.com/tablets/c",
-    category: "tablets",
+    url: "https://www.jarir.com/kw-en/2-in-1-laptops.html",
+    category: "lop",
   },
-  {
-    url: "https://www.xcite.com/laptops/c",
-    category: "laptops",
-  },
-  {
-    url: "https://www.xcite.com/mobile-phones/c",
-    category: "mobilephones",
-  },
-  {
-    url: "https://www.xcite.com/headphones/c",
-    category: "headphones",
-  },
-  {
-    url: "https://www.xcite.com/earphones/c",
-    category: "earphones",
-  },
+  // {
+  //   url: "https://best.com.kw/en/c/tablets-nn",
+  //   category: "tablets",
+  // },
+  // {
+  //   url: "https://best.com.kw/en/c/laptops-nn?query=:relevance:allCategories:laptops-nn:category:macbooks-nn",
+  //   category: "macbooks",
+  // },
+  // {
+  //   url: "https://best.com.kw/en/c/tablets-nn?query=:relevance:allCategories:tablets-nn:category:apple-tablets-nn:brand:apple",
+  //   category: "ipads",
+  // },
+  // {
+  //   url: "https://best.com.kw/en/c/mobiles-nn",
+  //   category: "mobilephones",
+  // },
+  // {
+  //   url: "https://best.com.kw/en/c/wired-nn",
+  //   category: "headphones",
+  // },
+  // {
+  //   url: "https://best.com.kw/en/c/wireless-nn",
+  //   category: "headphones",
+  // },
 ];
 
 async function runAllScrapers() {
